@@ -32,6 +32,16 @@ app.use(
     saveUninitialized: true,
   })
 );
+app.get("/users", async (req, res) => {
+  try {
+    const users = await User.find(); // Fetch all users
+    res.status(200).json(users); // Send users as JSON response
+  } catch (error) {
+    res.status(500).json({ error: "An error occurred while fetching users." });
+  }
+});
+
+//---------------------------User Registration-------------------------------------//
 
 // Signup Route
 app.post("/signup", async (req, res) => {
@@ -55,15 +65,6 @@ app.post("/signup", async (req, res) => {
   res
     .status(201)
     .json({ message: "User  created successfully", userId: newUser._id });
-});
-
-app.get("/users", async (req, res) => {
-  try {
-    const users = await User.find(); // Fetch all users
-    res.status(200).json(users); // Send users as JSON response
-  } catch (error) {
-    res.status(500).json({ error: "An error occurred while fetching users." });
-  }
 });
 
 // 1. Generate Credential Creation Options
@@ -128,8 +129,6 @@ app.post("/registerRequest", async (req, res) => {
   }
 });
 
-//User Authentication
-
 app.post("/registerResponse", async (req, res) => {
   const { response, userId } = req.body;
   const expectedChallenge = req.session.challenge;
@@ -142,41 +141,31 @@ app.post("/registerResponse", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Find the credential stored to the database by the credential ID
-    const credential = await Credentials.find({
-      credentialId: response.id,
-    });
-    console.log("Credential:", credential);
-
-    if (!credential) {
-      return res.status(400).send({ error: "Credential not found" });
-    }
-
-    // Use the first credential found
-    const cred = credentials[0];
-
-    // Base64URL decode some values
-    const authenticator = {
-      credentialPublicKey: isoBase64URL.toBuffer(cred.publicKey),
-      credentialID: isoBase64URL.toBuffer(cred.id),
-      transports: cred.transports,
-    };
-
-    console.log("Authenticator:", authenticator);
-    // Verify the credential
-
-    const { verified } = await verifyAuthenticationResponse({
+    const { verified, registrationInfo } = await verifyRegistrationResponse({
       response,
       expectedChallenge,
       expectedOrigin,
       expectedRPID,
-      authenticator,
-      requireUserVerification: false,
+      // requireUserVerification: false,
     });
 
     if (!verified) {
       return res.status(400).send({ error: "Authentication failed" });
     }
+
+    // Save the credential to the database
+    const { credentialPublicKey, credentialID, credentialBackedUp } =
+      registrationInfo;
+
+    await Credentials.create({
+      userId,
+      credentialId: isoBase64URL.fromBuffer(credentialID),
+      publicKey: isoBase64URL.fromBuffer(credentialPublicKey),
+      transports: response.transports || [],
+      backed_up: credentialBackedUp || false,
+      name: req.useragent?.platform || "default",
+    });
+
     // Kill the challenge for this session.
     delete req.session.challenge;
     req.session.username = user.username;
