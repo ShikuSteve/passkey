@@ -131,25 +131,25 @@ app.post("/registerRequest", async (req, res) => {
 //User Authentication
 
 app.post("/registerResponse", async (req, res) => {
-  const response = req.body;
+  const { response, userId } = req.body;
   const expectedChallenge = req.session.challenge;
   const expectedOrigin = `${req.protocol}://${req.get("host")}`;
   const expectedRPID = "localhost";
 
   try {
+    const user = User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
     // Find the credential stored to the database by the credential ID
-    const credential = await Credential.find({
+    const credential = await Credentials.find({
       credentialId: response.credentialId,
     });
     console.log("Credential:", credential);
 
     if (!credential) {
       return res.status(400).send({ error: "Credential not found" });
-    }
-    const user = await User.findById(user._id);
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
     }
 
     // Base64URL decode some values
