@@ -146,7 +146,7 @@ app.post("/registerResponse", async (req, res) => {
     if (!credential) {
       return res.status(400).send({ error: "Credential not found" });
     }
-    const user = await User.findById(userId);
+    const user = await User.findById(user._id);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
