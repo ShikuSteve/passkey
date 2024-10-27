@@ -144,7 +144,7 @@ app.post("/registerResponse", async (req, res) => {
 
     // Find the credential stored to the database by the credential ID
     const credential = await Credentials.find({
-      credentialId: response.credentialId,
+      credentialId: response.id,
     });
     console.log("Credential:", credential);
 
