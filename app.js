@@ -137,7 +137,7 @@ app.post("/registerResponse", async (req, res) => {
   const expectedRPID = "localhost";
 
   try {
-    const user = User.findById(userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -151,6 +151,9 @@ app.post("/registerResponse", async (req, res) => {
     if (!credential) {
       return res.status(400).send({ error: "Credential not found" });
     }
+
+    // Use the first credential found
+    const cred = credentials[0];
 
     // Base64URL decode some values
     const authenticator = {
