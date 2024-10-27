@@ -168,13 +168,46 @@ app.post("/registerResponse", async (req, res) => {
 
     // Kill the challenge for this session.
     delete req.session.challenge;
-    req.session.username = user.username;
+    req.session.username = user.userName;
     req.session["signed-in"] = "yes";
 
     return res.json(user);
   } catch (error) {
     console.log(error);
     return res.status(400).send({ error: error.message });
+  }
+});
+
+app.get("/credential", async (req, res) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ error: "User ID is required" });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Retrieve credentials for the user
+    const credentials = await Credentials.find({ userId: userId });
+
+    // Check if credentials exist
+    if (!credentials || credentials.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "No credentials found for this user" });
+    }
+
+    // Return the credentials
+    return res.json(credentials);
+  } catch (error) {
+    console.error("Error retrieving credentials:", error);
+    return res
+      .status(500)
+      .json({ error: "An error occurred while retrieving credentials" });
   }
 });
 
