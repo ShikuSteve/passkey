@@ -5,11 +5,15 @@ import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
 import {
+  generateAuthenticationOptions,
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import { AuthenticatorTransportFuture } from "@simplewebauthn/types";
+import {
+  AuthenticatorTransportFuture,
+  WebAuthnCredential,
+} from "@simplewebauthn/types";
 
 const app = express();
 app.use(express.json());
@@ -143,17 +147,6 @@ app.post("/registerResponse", async (req, res) => {
   const expectedOrigin = `${req.protocol}://${req.get("host")}`;
   const expectedRPID = "localhost";
 
-  interface RegistrationInfo {
-    credentialPublicKey: Uint8Array;
-    credentialID: Uint8Array;
-    credentialBackedUp?: boolean;
-    fmt: string; // Add other properties as needed
-    aaguid: string; // Add other properties as needed
-    credential: any; // Replace 'any' with the appropriate type if known
-    credentialType: "public-key";
-    attestationObject: Uint8Array;
-  }
-
   try {
     const user = await User.findById(userId);
     if (!user) {
@@ -203,10 +196,93 @@ app.post("/registerResponse", async (req, res) => {
 
     return res.json(user);
   } catch (error: any) {
+    delete req.session.challenge;
     console.log(error);
-    return res.status(400).send({ error: error.message });
+    return res.status(400).json({ error: error.message });
   }
 });
+
+//-------------------------------User Authentication---------------------------------------
+
+app.post(
+  "/signinRequest",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticationOptions = await generateAuthenticationOptions({
+        rpID: "localhost",
+        allowCredentials: [],
+      });
+      // Save the challenge in the user session
+      req.session.challenge = authenticationOptions.challenge;
+      return res.json(authenticationOptions);
+    } catch (error: any) {
+      console.log(error);
+      return res.status(400).json({ error: error.message });
+    }
+  }
+);
+
+app.post(
+  "/signinResponse",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { response, userId } = req.body;
+    const expectedChallenge = req.session.challenge;
+    const expectedRPID = "localhost";
+    const expectedOrigin = `${req.protocol}://${req.get("host")}`;
+
+    try {
+      const credential = await Credentials.findById(response.id);
+      if (!credential) {
+        return res.status(400).json({ error: "Invalid credential id" });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(400).json({ error: "User not found" });
+      }
+      if (expectedChallenge === undefined) {
+        return res
+          .status(400)
+          .json({ error: "Expected challenge is missing from session." });
+      }
+
+      const webAuthnCredential = {
+        credentialPublicKey: isoBase64URL.toBuffer(
+          response.credential.publicKey
+        ),
+        credentialID: isoBase64URL.toBuffer(response.credential.id),
+        transports: response.credential.transports,
+      };
+
+      const verificationCredentials: WebAuthnCredential = {
+        id: isoBase64URL.fromBuffer(webAuthnCredential.credentialID),
+        publicKey: webAuthnCredential.credentialPublicKey,
+        counter: response.credential.counter,
+      };
+
+      const { verified } = await verifyAuthenticationResponse({
+        response,
+        credential: verificationCredentials,
+        expectedChallenge,
+        expectedOrigin,
+        expectedRPID,
+        requireUserVerification: false,
+      });
+      if (!verified) {
+        return res.status(400).json({ error: "Authentication failed" });
+      }
+      delete req.session.challenge;
+      req.session.username = user.userName;
+      req.session.signedIn = true;
+
+      return res.json(user);
+    } catch (error: any) {
+      delete req.session.challenge;
+      console.log(error);
+      return res.status(400).json({ error: error.message });
+    }
+  }
+);
 
 app.get("/credential", async (req: Request, res: Response) => {
   const { userId } = req.query;

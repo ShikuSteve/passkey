@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
-import { generateRegistrationOptions, verifyRegistrationResponse, } from "@simplewebauthn/server";
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
 const app = express();
 app.use(express.json());
 mongoose.connect("mongodb://localhost:27017/passkey", {
@@ -143,8 +143,74 @@ app.post("/registerResponse", async (req, res) => {
         return res.json(user);
     }
     catch (error) {
+        delete req.session.challenge;
         console.log(error);
-        return res.status(400).send({ error: error.message });
+        return res.status(400).json({ error: error.message });
+    }
+});
+app.post("/signinRequest", async (req, res, next) => {
+    try {
+        const authenticationOptions = await generateAuthenticationOptions({
+            rpID: "localhost",
+            allowCredentials: [],
+        });
+        req.session.challenge = authenticationOptions.challenge;
+        return res.json(authenticationOptions);
+    }
+    catch (error) {
+        console.log(error);
+        return res.status(400).json({ error: error.message });
+    }
+});
+app.post("/signinResponse", async (req, res, next) => {
+    const { response, userId } = req.body;
+    const expectedChallenge = req.session.challenge;
+    const expectedRPID = "localhost";
+    const expectedOrigin = `${req.protocol}://${req.get("host")}`;
+    try {
+        const credential = await Credentials.findById(response.id);
+        if (!credential) {
+            return res.status(400).json({ error: "Invalid credential id" });
+        }
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(400).json({ error: "User not found" });
+        }
+        if (expectedChallenge === undefined) {
+            return res
+                .status(400)
+                .json({ error: "Expected challenge is missing from session." });
+        }
+        const webAuthnCredential = {
+            credentialPublicKey: isoBase64URL.toBuffer(response.credential.publicKey),
+            credentialID: isoBase64URL.toBuffer(response.credential.id),
+            transports: response.credential.transports,
+        };
+        const verificationCredentials = {
+            id: isoBase64URL.fromBuffer(webAuthnCredential.credentialID),
+            publicKey: webAuthnCredential.credentialPublicKey,
+            counter: response.credential.counter,
+        };
+        const { verified } = await verifyAuthenticationResponse({
+            response,
+            credential: verificationCredentials,
+            expectedChallenge,
+            expectedOrigin,
+            expectedRPID,
+            requireUserVerification: false,
+        });
+        if (!verified) {
+            return res.status(400).json({ error: "Authentication failed" });
+        }
+        delete req.session.challenge;
+        req.session.username = user.userName;
+        req.session.signedIn = true;
+        return res.json(user);
+    }
+    catch (error) {
+        delete req.session.challenge;
+        console.log(error);
+        return res.status(400).json({ error: error.message });
     }
 });
 app.get("/credential", async (req, res) => {
