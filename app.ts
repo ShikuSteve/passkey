@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import session from "express-session";
 import mongoose from "mongoose";
 import { User } from "./src/models/User.js";
@@ -9,6 +9,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
+import { AuthenticatorTransportFuture } from "@simplewebauthn/types";
 
 const app = express();
 app.use(express.json());
@@ -16,7 +17,7 @@ app.use(express.json());
 mongoose.connect("mongodb://localhost:27017/passkey", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-});
+} as mongoose.ConnectOptions);
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -32,7 +33,7 @@ app.use(
     saveUninitialized: true,
   })
 );
-app.get("/users", async (req, res) => {
+app.get("/users", async (res: Response) => {
   try {
     const users = await User.find(); // Fetch all users
     res.status(200).json(users); // Send users as JSON response
@@ -44,31 +45,34 @@ app.get("/users", async (req, res) => {
 //---------------------------User Registration-------------------------------------//
 
 // Signup Route
-app.post("/signup", async (req, res) => {
-  const { email, userName } = req.body;
+app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, userName } = req.body;
 
-  // Basic validation
-  if (!email || !userName) {
-    return res.status(400).json({ error: "All fields are required" });
+    // Basic validation
+    if (!email || !userName) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: "User  already exists" });
+    }
+
+    // Create new user
+    const newUser = new User({ email, userName });
+    await newUser.save();
+
+    res
+      .status(201)
+      .json({ message: "User  created successfully", userId: newUser._id });
+  } catch (error) {
+    next(error); // Pass any errors to the next middleware
   }
-
-  // Check if user already exists
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    return res.status(400).json({ error: "User  already exists" });
-  }
-
-  // Create new user
-  const newUser = new User({ email, userName });
-  await newUser.save();
-
-  res
-    .status(201)
-    .json({ message: "User  created successfully", userId: newUser._id });
 });
-
 // 1. Generate Credential Creation Options
-app.post("/registerRequest", async (req, res) => {
+app.post("/registerRequest", async (req: Request, res: Response) => {
   const { userId } = req.body;
   const user = await User.findById(userId);
 
@@ -77,7 +81,11 @@ app.post("/registerRequest", async (req, res) => {
   }
 
   try {
-    const excludeCredentials = [];
+    const excludeCredentials: Array<{
+      id: string;
+      type: string;
+      transports?: AuthenticatorTransportFuture[];
+    }> = [];
 
     // Get existing credentials for exclusion
     const credential = await Credentials.find({ userId: user._id });
@@ -86,20 +94,20 @@ app.post("/registerRequest", async (req, res) => {
     if (credential.length > 0) {
       for (const cred of credential) {
         excludeCredentials.push({
-          id: isoBase64URL.toBuffer(cred.credentialId),
+          id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(cred.credentialId)),
           type: "public-key",
-          transports: cred.transports,
+          transports: cred.transports as AuthenticatorTransportFuture[],
         });
       }
     }
 
-    const rpId = "localhost"; // Ensure this is defined
-    console.log("rpId before generating options:", rpId);
+    const rpID = "localhost"; // Ensure this is defined
+    console.log("rpId before generating options:", rpID);
 
     // Generate registration options for WebAuthn create
     const registrationOptions = await generateRegistrationOptions({
       rpName: "PassKey",
-      rpId,
+      rpID,
       userID: isoUint8Array.fromUTF8String(user._id.toString()),
       userName: user.email,
       userDisplayName: user.userName,
@@ -135,10 +143,25 @@ app.post("/registerResponse", async (req, res) => {
   const expectedOrigin = `${req.protocol}://${req.get("host")}`;
   const expectedRPID = "localhost";
 
+  interface RegistrationInfo {
+    credentialPublicKey: Uint8Array;
+    credentialID: Uint8Array;
+    credentialBackedUp?: boolean;
+    fmt: string; // Add other properties as needed
+    aaguid: string; // Add other properties as needed
+    credential: any; // Replace 'any' with the appropriate type if known
+    credentialType: "public-key";
+    attestationObject: Uint8Array;
+  }
+
   try {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    if (typeof expectedChallenge !== "string") {
+      return res.status(400).json({ error: "Challenge not found in session." });
     }
 
     const { verified, registrationInfo } = await verifyRegistrationResponse({
@@ -154,8 +177,15 @@ app.post("/registerResponse", async (req, res) => {
     }
 
     // Save the credential to the database
-    const { credentialPublicKey, credentialID, credentialBackedUp } =
-      registrationInfo;
+
+    if (!registrationInfo) {
+      return res
+        .status(400)
+        .json({ error: "Registration information is missing." });
+    }
+    const credentialID = response.credential.id;
+    const credentialPublicKey = response.credential.publicKey;
+    const credentialBackedUp = registrationInfo.credentialBackedUp;
 
     await Credentials.create({
       userId,
@@ -178,7 +208,7 @@ app.post("/registerResponse", async (req, res) => {
   }
 });
 
-app.get("/credential", async (req, res) => {
+app.get("/credential", async (req: Request, res: Response) => {
   const { userId } = req.query;
 
   if (!userId) {
@@ -191,7 +221,6 @@ app.get("/credential", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Retrieve credentials for the user
     const credentials = await Credentials.find({ userId: userId });
 
     // Check if credentials exist
