@@ -22,7 +22,7 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
 }));
-app.get("/users", async (res) => {
+app.get("/users", async (req, res, next) => {
     try {
         const users = await User.find();
         res.status(200).json(users);

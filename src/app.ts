@@ -37,7 +37,7 @@ app.use(
     saveUninitialized: true,
   })
 );
-app.get("/users", async (res: Response) => {
+app.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const users = await User.find(); // Fetch all users
     res.status(200).json(users); // Send users as JSON response
