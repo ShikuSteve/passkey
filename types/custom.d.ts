@@ -7,6 +7,7 @@ declare module "express-session" {
   interface SessionData {
     challenge?: string;
     username: string;
+    signedIn?: boolean;
   }
 }
 

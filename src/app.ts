@@ -1,9 +1,9 @@
 import express, { NextFunction, Request, Response } from "express";
-import session from "express-session";
+import session, { SessionData } from "express-session";
 import mongoose from "mongoose";
-import { User } from "./src/models/User.js";
+import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
-import { Credentials } from "./src/models/Credential.js";
+import { Credentials } from "./models/Credential.js";
 import {
   generateRegistrationOptions,
   verifyAuthenticationResponse,
@@ -131,7 +131,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
     console.log("Existing credentials:", excludeCredentials);
 
     return res.json(registrationOptions);
-  } catch (error) {
+  } catch (error: any) {
     console.log(error);
     return res.status(400).send({ error: error.message });
   }
@@ -199,10 +199,10 @@ app.post("/registerResponse", async (req, res) => {
     // Kill the challenge for this session.
     delete req.session.challenge;
     req.session.username = user.userName;
-    req.session["signed-in"] = "yes";
+    req.session.signedIn = true;
 
     return res.json(user);
-  } catch (error) {
+  } catch (error: any) {
     console.log(error);
     return res.status(400).send({ error: error.message });
   }

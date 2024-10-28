@@ -1,9 +1,9 @@
 {
   "name": "passkey",
   "version": "1.0.0",
-  "main": "app.js",
+  "main": "src/app.ts",
   "scripts": {
-    "start": "nodemon app.js",
+    "start": "nodemon build/src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -24,6 +24,7 @@
     "@types/mongoose": "^5.11.96",
     "@types/node": "^22.8.1",
     "nodemon": "^3.1.7",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }
 }
