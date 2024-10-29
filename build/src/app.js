@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import MongoStore from "connect-mongo";
 import mongoose from "mongoose";
 import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
@@ -21,6 +22,11 @@ app.use(session({
     secret: "keyboard cat",
     resave: false,
     saveUninitialized: true,
+    store: MongoStore.create({
+        mongoUrl: "mongodb://localhost:27017/passkey",
+        collectionName: "sessions",
+    }),
+    cookie: { secure: false },
 }));
 app.get("/users", async (req, res, next) => {
     try {
@@ -60,7 +66,6 @@ app.post("/registerRequest", async (req, res) => {
     try {
         const excludeCredentials = [];
         const credential = await Credentials.find({ userId: user._id });
-        console.log("Fetched credentials:", credential);
         if (credential.length > 0) {
             for (const cred of credential) {
                 excludeCredentials.push({
@@ -71,7 +76,6 @@ app.post("/registerRequest", async (req, res) => {
             }
         }
         const rpID = "localhost";
-        console.log("rpId before generating options:", rpID);
         const registrationOptions = await generateRegistrationOptions({
             rpName: "PassKey",
             rpID,
@@ -81,17 +85,15 @@ app.post("/registerRequest", async (req, res) => {
             excludeCredentials,
             attestationType: "none",
             authenticatorSelection: {
-                authenticatorAttachment: "platform",
+                authenticatorAttachment: "cross-platform",
                 requireResidentKey: true,
+                userVerification: "preferred",
             },
             supportedAlgorithmIDs: [-7, -257],
         });
-        console.log("rpId:", registrationOptions.rp?.id);
-        console.log("Registration options:", registrationOptions);
         req.session.challenge = registrationOptions.challenge;
-        console.log("User  ID:", userId);
-        console.log("User  found:", user);
-        console.log("Existing credentials:", excludeCredentials);
+        console.log(req.session);
+        console.log(req.session.challenge);
         return res.json(registrationOptions);
     }
     catch (error) {
@@ -104,6 +106,11 @@ app.post("/registerResponse", async (req, res) => {
     const expectedChallenge = req.session.challenge;
     const expectedOrigin = `${req.protocol}://${req.get("host")}`;
     const expectedRPID = "localhost";
+    console.log("Session challenge:", req.session.challenge);
+    if (!req.session.challenge) {
+        console.log("Challenge is missing from session.");
+        return res.status(400).json({ error: "Challenge not found in session." });
+    }
     try {
         const user = await User.findById(userId);
         if (!user) {
@@ -117,6 +124,7 @@ app.post("/registerResponse", async (req, res) => {
             expectedChallenge,
             expectedOrigin,
             expectedRPID,
+            requireUserVerification: true,
         });
         if (!verified) {
             return res.status(400).send({ error: "Authentication failed" });
