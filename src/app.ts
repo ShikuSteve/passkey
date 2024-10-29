@@ -25,25 +25,31 @@ mongoose.connect("mongodb://localhost:27017/passkey", {
 } as mongoose.ConnectOptions);
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3001");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   next();
 });
 
-app.use(
-  session({
-    secret: "keyboard cat",
-    resave: false,
-    saveUninitialized: true,
-    store: MongoStore.create({
-      mongoUrl: "mongodb://localhost:27017/passkey",
-      collectionName: "sessions",
-    }),
+// Session Middleware
+app.use(session({
+  secret: "keyboard cat", // Change this to a more secure secret in production
+  resave: false,
+  saveUninitialized: true, // This should be true for session creation
+  store: MongoStore.create({
+    mongoUrl: "mongodb://localhost:27017/passkey",
+    collectionName: "sessions",
+    ttl: 14 * 24 * 60 * 60, // 14 days
+  }),
+  cookie: {
+    secure: false, // Set to true if using HTTPS
+    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
+    sameSite: 'lax', // 'lax' is a good default
+  },
+}));
 
-    cookie: { secure: false },
-  })
-);
+
 app.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const users = await User.find(); // Fetch all users
@@ -139,6 +145,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
     req.session.challenge = registrationOptions.challenge;
     console.log(req.session);
     console.log(req.session.challenge);
+    console.log(registrationOptions);
 
     // console.log("User  ID:", userId);
     // console.log("User  found:", user);
@@ -156,7 +163,15 @@ app.post("/registerResponse", async (req, res) => {
   const expectedChallenge = req.session.challenge;
   const expectedOrigin = `${req.protocol}://${req.get("host")}`;
   const expectedRPID = "localhost";
+  console.log("Request headers:", req.headers);
+  console.log("Session in /registerResponse:", req.session);
   console.log("Session challenge:", req.session.challenge);
+
+  if (!expectedChallenge) {
+    return res
+      .status(400)
+      .json({ error: "Challenge is missing from session." });
+  }
 
   if (!req.session.challenge) {
     console.log("Challenge is missing from session.");

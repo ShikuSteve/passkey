@@ -13,9 +13,10 @@ mongoose.connect("mongodb://localhost:27017/passkey", {
     useUnifiedTopology: true,
 });
 app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Origin", "http://localhost:3001");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
 app.use(session({
@@ -25,8 +26,13 @@ app.use(session({
     store: MongoStore.create({
         mongoUrl: "mongodb://localhost:27017/passkey",
         collectionName: "sessions",
+        ttl: 14 * 24 * 60 * 60,
     }),
-    cookie: { secure: false },
+    cookie: {
+        secure: false,
+        maxAge: 14 * 24 * 60 * 60 * 1000,
+        sameSite: 'lax',
+    },
 }));
 app.get("/users", async (req, res, next) => {
     try {
@@ -94,6 +100,7 @@ app.post("/registerRequest", async (req, res) => {
         req.session.challenge = registrationOptions.challenge;
         console.log(req.session);
         console.log(req.session.challenge);
+        console.log(registrationOptions);
         return res.json(registrationOptions);
     }
     catch (error) {
@@ -106,7 +113,14 @@ app.post("/registerResponse", async (req, res) => {
     const expectedChallenge = req.session.challenge;
     const expectedOrigin = `${req.protocol}://${req.get("host")}`;
     const expectedRPID = "localhost";
+    console.log("Request headers:", req.headers);
+    console.log("Session in /registerResponse:", req.session);
     console.log("Session challenge:", req.session.challenge);
+    if (!expectedChallenge) {
+        return res
+            .status(400)
+            .json({ error: "Challenge is missing from session." });
+    }
     if (!req.session.challenge) {
         console.log("Challenge is missing from session.");
         return res.status(400).json({ error: "Challenge not found in session." });
