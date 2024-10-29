@@ -134,8 +134,11 @@ app.post("/registerResponse", async (req, res) => {
         if (typeof expectedChallenge !== "string") {
             return res.status(400).json({ error: "Challenge not found in session." });
         }
+        if (!response || !response.credential) {
+            return res.status(400).json({ error: "Invalid response format." });
+        }
         const { verified, registrationInfo } = await verifyRegistrationResponse({
-            response,
+            response: response.credential,
             expectedChallenge,
             expectedOrigin,
             expectedRPID,
@@ -149,13 +152,13 @@ app.post("/registerResponse", async (req, res) => {
                 .status(400)
                 .json({ error: "Registration information is missing." });
         }
-        const credentialID = response.credential.id;
-        const credentialPublicKey = response.credential.publicKey;
+        const credentialID = isoBase64URL.fromBuffer(response.credential.credentialID);
+        const credentialPublicKey = isoBase64URL.fromBuffer(response.credential.publicKey);
         const credentialBackedUp = registrationInfo.credentialBackedUp;
         await Credentials.create({
             userId,
-            credentialId: isoBase64URL.fromBuffer(credentialID),
-            publicKey: isoBase64URL.fromBuffer(credentialPublicKey),
+            credentialId: credentialID,
+            publicKey: credentialPublicKey,
             transports: response.transports || [],
             backed_up: credentialBackedUp || false,
             name: req.useragent?.platform || "default",
