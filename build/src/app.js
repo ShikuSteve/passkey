@@ -152,8 +152,8 @@ app.post("/registerResponse", async (req, res) => {
                 .status(400)
                 .json({ error: "Registration information is missing." });
         }
-        const credentialID = isoBase64URL.fromBuffer(response.credential.credentialID);
-        const credentialPublicKey = isoBase64URL.fromBuffer(response.credential.publicKey);
+        const credentialID = isoBase64URL.fromBuffer(response.credential.id);
+        const credentialPublicKey = isoBase64URL.fromBuffer(response.credential.credentialPublicKey);
         const credentialBackedUp = registrationInfo.credentialBackedUp;
         await Credentials.create({
             userId,
