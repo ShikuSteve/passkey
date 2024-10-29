@@ -152,8 +152,8 @@ app.post("/registerResponse", async (req, res) => {
                 .status(400)
                 .json({ error: "Registration information is missing." });
         }
-        const credentialID = isoBase64URL.fromBuffer(response.id);
-        const credentialPublicKey = isoBase64URL.fromBuffer(response.credentialPublicKey);
+        const credentialID = response.id;
+        const credentialPublicKey = response.credentialPublicKey;
         console.log("Credential ID:", credentialID);
         console.log("Public Key:", credentialPublicKey);
         if (!credentialID || !credentialPublicKey) {
@@ -185,7 +185,9 @@ app.post("/signinRequest", async (req, res, next) => {
             rpID: "localhost",
             allowCredentials: [],
         });
+        console.log("Generated Challenge:", authenticationOptions.challenge);
         req.session.challenge = authenticationOptions.challenge;
+        console.log("Session Challenge after setting:", req.session.challenge);
         return res.json(authenticationOptions);
     }
     catch (error) {
@@ -194,12 +196,17 @@ app.post("/signinRequest", async (req, res, next) => {
     }
 });
 app.post("/signinResponse", async (req, res, next) => {
+    console.log("Session Data in signinResponse:", req.session);
     const { response, userId } = req.body;
+    console.log(response, "yyyyyyyyyyyyyyyyyyyyyyyyyyyyy");
     const expectedChallenge = req.session.challenge;
+    console.log("Expected Challenge:", expectedChallenge);
     const expectedRPID = "localhost";
-    const expectedOrigin = `${req.protocol}://${req.get("host")}`;
+    const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
     try {
-        const credential = await Credentials.findById(response.id);
+        const credential = await Credentials.findOne({
+            credentialId: response.id,
+        });
         if (!credential) {
             return res.status(400).json({ error: "Invalid credential id" });
         }
