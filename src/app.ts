@@ -33,22 +33,23 @@ app.use((req, res, next) => {
 });
 
 // Session Middleware
-app.use(session({
-  secret: "keyboard cat", // Change this to a more secure secret in production
-  resave: false,
-  saveUninitialized: true, // This should be true for session creation
-  store: MongoStore.create({
-    mongoUrl: "mongodb://localhost:27017/passkey",
-    collectionName: "sessions",
-    ttl: 14 * 24 * 60 * 60, // 14 days
-  }),
-  cookie: {
-    secure: false, // Set to true if using HTTPS
-    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
-    sameSite: 'lax', // 'lax' is a good default
-  },
-}));
-
+app.use(
+  session({
+    secret: "keyboard cat", // Change this to a more secure secret in production
+    resave: false,
+    saveUninitialized: true, // This should be true for session creation
+    store: MongoStore.create({
+      mongoUrl: "mongodb://localhost:27017/passkey",
+      collectionName: "sessions",
+      ttl: 14 * 24 * 60 * 60, // 14 days
+    }),
+    cookie: {
+      secure: false, // Set to true if using HTTPS
+      maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
+      sameSite: "lax", // 'lax' is a good default
+    },
+  })
+);
 
 app.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -161,8 +162,11 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
 app.post("/registerResponse", async (req, res) => {
   const { response, userId } = req.body;
   const expectedChallenge = req.session.challenge;
-  const expectedOrigin = `${req.protocol}://${req.get("host")}`;
+  const expectedOrigin =
+    req.get("origin") || `${req.protocol}://${req.get("host")}`;
+
   const expectedRPID = "localhost";
+  console.log(response);
   console.log("Request headers:", req.headers);
   console.log("Session in /registerResponse:", req.session);
   console.log("Session challenge:", req.session.challenge);

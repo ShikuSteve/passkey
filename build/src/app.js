@@ -31,7 +31,7 @@ app.use(session({
     cookie: {
         secure: false,
         maxAge: 14 * 24 * 60 * 60 * 1000,
-        sameSite: 'lax',
+        sameSite: "lax",
     },
 }));
 app.get("/users", async (req, res, next) => {
@@ -111,8 +111,9 @@ app.post("/registerRequest", async (req, res) => {
 app.post("/registerResponse", async (req, res) => {
     const { response, userId } = req.body;
     const expectedChallenge = req.session.challenge;
-    const expectedOrigin = `${req.protocol}://${req.get("host")}`;
+    const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
     const expectedRPID = "localhost";
+    console.log(response);
     console.log("Request headers:", req.headers);
     console.log("Session in /registerResponse:", req.session);
     console.log("Session challenge:", req.session.challenge);
