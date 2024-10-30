@@ -23,6 +23,17 @@ app.use(session({
         sameSite: "lax",
     },
 }));
+function base64UrlToUint8Array(base64UrlString) {
+    const base64 = base64UrlString.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedBase64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const binaryString = atob(paddedBase64);
+    const binaryLength = binaryString.length;
+    const bytes = new Uint8Array(binaryLength);
+    for (let i = 0; i < binaryLength; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
 mongoose.connect("mongodb://localhost:27017/passkey", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -216,7 +227,7 @@ app.post("/signinResponse", async (req, res, next) => {
             console.error("Challenge mismatch!", response.challenge, expectedChallenge);
             return res.status(400).json({ error: "Invalid challenge." });
         }
-        const credential = await Credentials.find({
+        const credential = await Credentials.findOne({
             credentialId: response.id,
         });
         if (!credential)
@@ -224,15 +235,15 @@ app.post("/signinResponse", async (req, res, next) => {
         const user = await User.findById(userId);
         if (!user)
             return res.status(400).json({ error: "User  not found" });
-        const verificationCredentials = {
-            id: response.id,
-            publicKey: response.publicKey,
-            counter: response.counter,
-            transports: response.transports,
+        const authenticator = {
+            publicKey: isoBase64URL.toBuffer(credential.publicKey),
+            id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(credential.credentialId)),
+            transports: credential.transports,
+            counter: response?.counter,
         };
         const { verified } = await verifyAuthenticationResponse({
             response,
-            credential: verificationCredentials,
+            credential: authenticator,
             expectedChallenge,
             expectedOrigin,
             expectedRPID,
