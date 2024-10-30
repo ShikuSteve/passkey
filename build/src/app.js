@@ -8,6 +8,21 @@ import { Credentials } from "./models/Credential.js";
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
 const app = express();
 app.use(express.json());
+app.use(session({
+    secret: "keyboard cat",
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: "mongodb://localhost:27017/passkey",
+        collectionName: "sessions",
+        ttl: 14 * 24 * 60 * 60,
+    }),
+    cookie: {
+        secure: false,
+        maxAge: 14 * 24 * 60 * 60 * 1000,
+        sameSite: "none",
+    },
+}));
 mongoose.connect("mongodb://localhost:27017/passkey", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -19,21 +34,6 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
-app.use(session({
-    secret: "keyboard cat",
-    resave: false,
-    saveUninitialized: true,
-    store: MongoStore.create({
-        mongoUrl: "mongodb://localhost:27017/passkey",
-        collectionName: "sessions",
-        ttl: 14 * 24 * 60 * 60,
-    }),
-    cookie: {
-        secure: false,
-        maxAge: 14 * 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-    },
-}));
 app.get("/users", async (req, res, next) => {
     try {
         const users = await User.find();
@@ -187,6 +187,8 @@ app.post("/signinRequest", async (req, res, next) => {
         });
         console.log("Generated Challenge:", authenticationOptions.challenge);
         req.session.challenge = authenticationOptions.challenge;
+        console.log("Session in signinRequest:", req.session);
+        console.log("Session ID", req.sessionID);
         console.log("Session Challenge after setting:", req.session.challenge);
         return res.json(authenticationOptions);
     }
@@ -196,38 +198,37 @@ app.post("/signinRequest", async (req, res, next) => {
     }
 });
 app.post("/signinResponse", async (req, res, next) => {
-    console.log("Session Data in signinResponse:", req.session);
-    const { response, userId } = req.body;
-    console.log(response, "yyyyyyyyyyyyyyyyyyyyyyyyyyyyy");
-    const expectedChallenge = req.session.challenge;
-    console.log("Expected Challenge:", expectedChallenge);
-    const expectedRPID = "localhost";
-    const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
     try {
-        const credential = await Credentials.findOne({
-            credentialId: response.id,
-        });
-        if (!credential) {
-            return res.status(400).json({ error: "Invalid credential id" });
-        }
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(400).json({ error: "User not found" });
-        }
-        if (expectedChallenge === undefined) {
+        console.log("Session Data in signinResponse:", req.session);
+        console.log("Session ID", req.sessionID);
+        const { response, userId } = req.body;
+        console.log(response);
+        const expectedChallenge = req.session.challenge;
+        console.log("Expected Challenge:", expectedChallenge);
+        const expectedRPID = "localhost";
+        const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
+        if (!expectedChallenge) {
             return res
                 .status(400)
-                .json({ error: "Expected challenge is missing from session." });
+                .json({ error: "Missing challenge from session." });
         }
-        const webAuthnCredential = {
-            credentialPublicKey: isoBase64URL.toBuffer(response.credential.publicKey),
-            credentialID: isoBase64URL.toBuffer(response.credential.id),
-            transports: response.credential.transports,
-        };
+        if (response.challenge === expectedChallenge) {
+            console.error("Challenge mismatch!", response.challenge, expectedChallenge);
+            return res.status(400).json({ error: "Invalid challenge." });
+        }
+        const credential = await Credentials.find({
+            credentialId: response.id,
+        });
+        if (!credential)
+            return res.status(400).json({ error: "Invalid credential id" });
+        const user = await User.findById(userId);
+        if (!user)
+            return res.status(400).json({ error: "User  not found" });
         const verificationCredentials = {
-            id: isoBase64URL.fromBuffer(webAuthnCredential.credentialID),
-            publicKey: webAuthnCredential.credentialPublicKey,
-            counter: response.credential.counter,
+            id: response.id,
+            publicKey: response.publicKey,
+            counter: response.counter,
+            transports: response.transports,
         };
         const { verified } = await verifyAuthenticationResponse({
             response,
@@ -235,7 +236,6 @@ app.post("/signinResponse", async (req, res, next) => {
             expectedChallenge,
             expectedOrigin,
             expectedRPID,
-            requireUserVerification: false,
         });
         if (!verified) {
             return res.status(400).json({ error: "Authentication failed" });
@@ -243,12 +243,12 @@ app.post("/signinResponse", async (req, res, next) => {
         delete req.session.challenge;
         req.session.username = user.userName;
         req.session.signedIn = true;
+        console.log("Updated Session Data:", req.session);
         return res.json(user);
     }
     catch (error) {
-        delete req.session.challenge;
-        console.log(error);
-        return res.status(400).json({ error: error.message });
+        console.error("Error during signinResponse:", error);
+        return res.status(500).json({ error: error.message });
     }
 });
 app.get("/credential", async (req, res) => {
