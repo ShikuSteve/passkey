@@ -5,35 +5,9 @@ import mongoose from "mongoose";
 import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
-import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyRegistrationResponse, } from "@simplewebauthn/server";
 const app = express();
 app.use(express.json());
-app.use(session({
-    secret: "keyboard cat",
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-        mongoUrl: "mongodb://localhost:27017/passkey",
-        collectionName: "sessions",
-        ttl: 14 * 24 * 60 * 60,
-    }),
-    cookie: {
-        secure: false,
-        maxAge: 14 * 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-    },
-}));
-function base64UrlToUint8Array(base64UrlString) {
-    const base64 = base64UrlString.replace(/-/g, "+").replace(/_/g, "/");
-    const paddedBase64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
-    const binaryString = atob(paddedBase64);
-    const binaryLength = binaryString.length;
-    const bytes = new Uint8Array(binaryLength);
-    for (let i = 0; i < binaryLength; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-}
 mongoose.connect("mongodb://localhost:27017/passkey", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -45,6 +19,51 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
+function convertToCOSEPublicKey(uint8Array) {
+    const x = uint8Array.slice(15, 47);
+    const y = uint8Array.slice(47, 79);
+    const cosePublicKey = {
+        kty: 2,
+        crv: 1,
+        x: Array.from(x),
+        y: Array.from(y),
+    };
+    return cosePublicKey;
+}
+function cosePublicKeyToUint8Array(cosePublicKey) {
+    const xArray = Uint8Array.from(cosePublicKey.x);
+    const yArray = Uint8Array.from(cosePublicKey.y);
+    const publicKeyArray = new Uint8Array(1 + xArray.length + yArray.length);
+    publicKeyArray[0] = 0;
+    publicKeyArray.set(xArray, 1);
+    publicKeyArray.set(yArray, 1 + xArray.length);
+    return publicKeyArray;
+}
+function base64UrlToUint8Array(base64Url) {
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+app.use(session({
+    secret: "keyboard cat",
+    resave: false,
+    saveUninitialized: true,
+    store: MongoStore.create({
+        mongoUrl: "mongodb://localhost:27017/passkey",
+        collectionName: "sessions",
+        ttl: 14 * 24 * 60 * 60,
+    }),
+    cookie: {
+        secure: false,
+        maxAge: 14 * 24 * 60 * 60 * 1000,
+        sameSite: "none",
+    },
+}));
 app.get("/users", async (req, res, next) => {
     try {
         const users = await User.find();
@@ -119,6 +138,11 @@ app.post("/registerRequest", async (req, res) => {
         return res.status(400).send({ error: error.message });
     }
 });
+function base64UrlToBuffer(base64Url) {
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const binaryString = Buffer.from(base64, "base64").toString("binary");
+    return Buffer.from(binaryString, "binary");
+}
 app.post("/registerResponse", async (req, res) => {
     const { response, userId } = req.body;
     const expectedChallenge = req.session.challenge;
@@ -165,6 +189,7 @@ app.post("/registerResponse", async (req, res) => {
         }
         const credentialID = response.id;
         const credentialPublicKey = response.credentialPublicKey;
+        const publicKeyBuffer = base64UrlToBuffer(credentialPublicKey);
         console.log("Credential ID:", credentialID);
         console.log("Public Key:", credentialPublicKey);
         if (!credentialID || !credentialPublicKey) {
@@ -174,7 +199,7 @@ app.post("/registerResponse", async (req, res) => {
         await Credentials.create({
             userId,
             credentialId: credentialID,
-            publicKey: credentialPublicKey,
+            publicKey: publicKeyBuffer,
             transports: response.transports || [],
             backed_up: credentialBackedUp || false,
             name: req.useragent?.platform || "default",
@@ -213,7 +238,12 @@ app.post("/signinResponse", async (req, res, next) => {
         console.log("Session Data in signinResponse:", req.session);
         console.log("Session ID", req.sessionID);
         const { response, userId } = req.body;
+        console.log(response.credentialPublicKey);
         console.log(response);
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
         const expectedChallenge = req.session.challenge;
         console.log("Expected Challenge:", expectedChallenge);
         const expectedRPID = "localhost";
@@ -223,36 +253,13 @@ app.post("/signinResponse", async (req, res, next) => {
                 .status(400)
                 .json({ error: "Missing challenge from session." });
         }
-        if (response.challenge === expectedChallenge) {
-            console.error("Challenge mismatch!", response.challenge, expectedChallenge);
-            return res.status(400).json({ error: "Invalid challenge." });
-        }
         const credential = await Credentials.findOne({
             credentialId: response.id,
         });
         if (!credential)
             return res.status(400).json({ error: "Invalid credential id" });
-        const user = await User.findById(userId);
-        if (!user)
-            return res.status(400).json({ error: "User  not found" });
-        const authenticator = {
-            publicKey: isoBase64URL.toBuffer(credential.publicKey),
-            id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(credential.credentialId)),
-            transports: credential.transports,
-            counter: response?.counter,
-        };
-        const { verified } = await verifyAuthenticationResponse({
-            response,
-            credential: authenticator,
-            expectedChallenge,
-            expectedOrigin,
-            expectedRPID,
-        });
-        if (!verified) {
-            return res.status(400).json({ error: "Authentication failed" });
-        }
+        console.log("😎😋😊😫😫", credential.publicKey);
         delete req.session.challenge;
-        req.session.username = user.userName;
         req.session.signedIn = true;
         console.log("Updated Session Data:", req.session);
         return res.json(user);

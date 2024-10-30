@@ -5,14 +5,13 @@ const credentialsSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
-    
   },
   credentialId: {
     type: String,
     required: true,
     unique: true,
   },
-  publicKey: { type: String, required: true },
+  publicKey: { type: Buffer, required: true },
   transports: [String],
   backed_up: { type: Boolean, default: true },
   name: { type: String, default: "default" },
