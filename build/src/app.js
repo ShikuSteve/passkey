@@ -20,7 +20,7 @@ app.use(session({
     cookie: {
         secure: false,
         maxAge: 14 * 24 * 60 * 60 * 1000,
-        sameSite: "none",
+        sameSite: "lax",
     },
 }));
 mongoose.connect("mongodb://localhost:27017/passkey", {

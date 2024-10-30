@@ -22,9 +22,9 @@ app.use(express.json());
 // Session Middleware
 app.use(
   session({
-    secret: "keyboard cat", // Change this to a more secure secret in production
+    secret: "keyboard cat",
     resave: false,
-    saveUninitialized: false, // This should be true for session creation
+    saveUninitialized: false,
     store: MongoStore.create({
       mongoUrl: "mongodb://localhost:27017/passkey",
       collectionName: "sessions",
@@ -33,7 +33,7 @@ app.use(
     cookie: {
       secure: false, // Set to true if using HTTPS
       maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
-      sameSite: "none", // 'lax' is a good default
+      sameSite: "lax", // 'lax' is a good default
     },
   })
 );
