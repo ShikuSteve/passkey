@@ -138,6 +138,7 @@ app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
     next(error); // Pass any errors to the next middleware
   }
 });
+
 // 1. Generate Credential Creation Options
 app.post("/registerRequest", async (req: Request, res: Response) => {
   const { userId } = req.body;
@@ -161,7 +162,8 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
     if (credential.length > 0) {
       for (const cred of credential) {
         excludeCredentials.push({
-          id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(cred.credentialId)),
+          // id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(cred.credentialId)),
+          id: cred.credentialId,
           type: "public-key",
           transports: cred.transports as AuthenticatorTransportFuture[],
         });
@@ -275,26 +277,17 @@ app.post("/registerResponse", async (req, res) => {
         .status(400)
         .json({ error: "Registration information is missing." });
     }
-    const credentialID = response.id;
-    const credentialPublicKey = response.credentialPublicKey;
 
-    const publicKeyBuffer = base64UrlToBuffer(credentialPublicKey);
-
-    // Log the values to check if they are correct
-    console.log("Credential ID:", credentialID);
-    console.log("Public Key:", credentialPublicKey);
-
-    // Check if credentialID or credentialPublicKey are undefined or empty
-    if (!credentialID || !credentialPublicKey) {
-      throw new Error("Credential ID or Public Key is missing.");
-    }
-    const credentialBackedUp = registrationInfo.credentialBackedUp;
+    const { credential, credentialBackedUp } = registrationInfo;
+    console.log(registrationInfo);
+    const publicKeyBuffer = Buffer.from(credential.publicKey);
 
     await Credentials.create({
       userId,
-      credentialId: credentialID,
+      credentialId: credential.id,
+      counter: credential.counter || 0,
       publicKey: publicKeyBuffer,
-      transports: response.transports || [],
+      transports: credential.transports,
       backed_up: credentialBackedUp || false,
       name: req.useragent?.platform || "default",
     });
@@ -476,10 +469,6 @@ app.post(
       console.log("Session ID", req.sessionID);
 
       const { response, userId } = req.body;
-      console.log(response.credentialPublicKey);
-
-      console.log(response);
-
       const user = await User.findById(userId);
 
       if (!user) {
@@ -487,8 +476,6 @@ app.post(
       }
 
       const expectedChallenge = req.session.challenge;
-      console.log("Expected Challenge:", expectedChallenge);
-
       const expectedRPID = "localhost";
       const expectedOrigin =
         req.get("origin") || `${req.protocol}://${req.get("host")}`;
@@ -499,46 +486,50 @@ app.post(
           .json({ error: "Missing challenge from session." });
       }
 
-      const credential = await Credentials.findOne({
+      const exitingCredential = await Credentials.findOne({
         credentialId: response.id,
       });
 
-      if (!credential)
+      if (!exitingCredential)
         return res.status(400).json({ error: "Invalid credential id" });
-      console.log("😎😋😊😫😫", credential.publicKey);
 
-      // const publicKeyUint8Array = base64UrlToUint8Array(credential.publicKey);
+      // // Convert credentialId (Bytes) to Base64URLString for WebAuthn compatibility
+      // const credentialIdBase64 = isoBase64URL.fromBuffer(
+      //   isoBase64URL.toBuffer(credential.credentialId)
+      // );
 
-      // console.log("nnnnnnnnnnnnnnnnnnnnnnnnnn", publicKeyUint8Array);
-
-      // // Convert to COSE format
-      // const cosePublicKey = convertToCOSEPublicKey(publicKeyUint8Array);
-      // console.log(cosePublicKey);
-
-      // const publicKeyForVerification = cosePublicKeyToUint8Array(cosePublicKey);
+      // // Convert publicKey from database format to Uint8Array if not already
+      // const publicKeyForVerification = credential.publicKey as Uint8Array;
 
       // const verificationCredentials: WebAuthnCredential = {
-      //   id: credential.credentialId,
+      //   id: credentialIdBase64,
       //   publicKey: publicKeyForVerification,
       //   counter: response.counter || 0,
       //   transports: credential.transports as AuthenticatorTransportFuture[],
       // };
+      const publicKeyBuffer = exitingCredential.publicKey;
+      const publicKeyUint8Array = new Uint8Array(publicKeyBuffer);
 
-      // const { verified } = await verifyAuthenticationResponse({
-      //   response,
-      //   credential: verificationCredentials,
-      //   expectedChallenge,
-      //   expectedOrigin,
-      //   expectedRPID,
-      // });
+      const { verified } = await verifyAuthenticationResponse({
+        response,
+        credential: {
+          id: exitingCredential.id,
+          publicKey: publicKeyUint8Array,
+          counter: exitingCredential.counter || 0,
+          transports:
+            exitingCredential.transports as AuthenticatorTransportFuture[],
+        },
+        expectedChallenge,
+        expectedOrigin,
+        expectedRPID,
+      });
 
-      // if (!verified) {
-      //   return res.status(400).json({ error: "Authentication failed" });
-      // }
+      if (!verified) {
+        return res.status(400).json({ error: "Authentication failed" });
+      }
 
       // Clear the challenge and set user data in the session
       delete req.session.challenge;
-      // req.session.username = user.userName;
       req.session.signedIn = true;
 
       console.log("Updated Session Data:", req.session);

@@ -3,9 +3,9 @@ import session from "express-session";
 import MongoStore from "connect-mongo";
 import mongoose from "mongoose";
 import { User } from "./models/User.js";
-import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
+import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
-import { generateAuthenticationOptions, generateRegistrationOptions, verifyRegistrationResponse, } from "@simplewebauthn/server";
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
 const app = express();
 app.use(express.json());
 mongoose.connect("mongodb://localhost:27017/passkey", {
@@ -105,7 +105,7 @@ app.post("/registerRequest", async (req, res) => {
         if (credential.length > 0) {
             for (const cred of credential) {
                 excludeCredentials.push({
-                    id: isoBase64URL.fromBuffer(isoBase64URL.toBuffer(cred.credentialId)),
+                    id: cred.credentialId,
                     type: "public-key",
                     transports: cred.transports,
                 });
@@ -187,20 +187,15 @@ app.post("/registerResponse", async (req, res) => {
                 .status(400)
                 .json({ error: "Registration information is missing." });
         }
-        const credentialID = response.id;
-        const credentialPublicKey = response.credentialPublicKey;
-        const publicKeyBuffer = base64UrlToBuffer(credentialPublicKey);
-        console.log("Credential ID:", credentialID);
-        console.log("Public Key:", credentialPublicKey);
-        if (!credentialID || !credentialPublicKey) {
-            throw new Error("Credential ID or Public Key is missing.");
-        }
-        const credentialBackedUp = registrationInfo.credentialBackedUp;
+        const { credential, credentialBackedUp } = registrationInfo;
+        console.log(registrationInfo);
+        const publicKeyBuffer = Buffer.from(credential.publicKey);
         await Credentials.create({
             userId,
-            credentialId: credentialID,
+            credentialId: credential.id,
+            counter: credential.counter || 0,
             publicKey: publicKeyBuffer,
-            transports: response.transports || [],
+            transports: credential.transports,
             backed_up: credentialBackedUp || false,
             name: req.useragent?.platform || "default",
         });
@@ -238,14 +233,11 @@ app.post("/signinResponse", async (req, res, next) => {
         console.log("Session Data in signinResponse:", req.session);
         console.log("Session ID", req.sessionID);
         const { response, userId } = req.body;
-        console.log(response.credentialPublicKey);
-        console.log(response);
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
         const expectedChallenge = req.session.challenge;
-        console.log("Expected Challenge:", expectedChallenge);
         const expectedRPID = "localhost";
         const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
         if (!expectedChallenge) {
@@ -253,12 +245,28 @@ app.post("/signinResponse", async (req, res, next) => {
                 .status(400)
                 .json({ error: "Missing challenge from session." });
         }
-        const credential = await Credentials.findOne({
+        const exitingCredential = await Credentials.findOne({
             credentialId: response.id,
         });
-        if (!credential)
+        if (!exitingCredential)
             return res.status(400).json({ error: "Invalid credential id" });
-        console.log("😎😋😊😫😫", credential.publicKey);
+        const publicKeyBuffer = exitingCredential.publicKey;
+        const publicKeyUint8Array = new Uint8Array(publicKeyBuffer);
+        const { verified } = await verifyAuthenticationResponse({
+            response,
+            credential: {
+                id: exitingCredential.id,
+                publicKey: publicKeyUint8Array,
+                counter: exitingCredential.counter || 0,
+                transports: exitingCredential.transports,
+            },
+            expectedChallenge,
+            expectedOrigin,
+            expectedRPID,
+        });
+        if (!verified) {
+            return res.status(400).json({ error: "Authentication failed" });
+        }
         delete req.session.challenge;
         req.session.signedIn = true;
         console.log("Updated Session Data:", req.session);

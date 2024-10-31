@@ -11,6 +11,10 @@ const credentialsSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  counter: {
+    type: Number, // BIGINT equivalent
+    required: true,
+  },
   publicKey: { type: Buffer, required: true },
   transports: [String],
   backed_up: { type: Boolean, default: true },
