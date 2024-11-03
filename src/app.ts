@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import session, { SessionData } from "express-session";
 import MongoStore from "connect-mongo";
 import mongoose from "mongoose";
+import dotenv from "dotenv";
 import { User } from "./models/User.js";
 import { isoBase64URL, isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
@@ -17,9 +18,13 @@ import {
 } from "@simplewebauthn/types";
 
 const app = express();
-app.use(express.json());
 
-mongoose.connect("mongodb://localhost:27017/passkey", {
+app.use(express.json());
+dotenv.config();
+
+const uri = process.env.MONGODB_URI as string;
+
+mongoose.connect(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 } as mongoose.ConnectOptions);
@@ -42,7 +47,7 @@ app.use(
     resave: false,
     saveUninitialized: true, // This should be true for session creation
     store: MongoStore.create({
-      mongoUrl: "mongodb://localhost:27017/passkey",
+      mongoUrl: uri,
       collectionName: "sessions",
       ttl: 14 * 24 * 60 * 60, // 14 days
     }),

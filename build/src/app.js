@@ -2,13 +2,16 @@ import express from "express";
 import session from "express-session";
 import MongoStore from "connect-mongo";
 import mongoose from "mongoose";
+import dotenv from "dotenv";
 import { User } from "./models/User.js";
 import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import { Credentials } from "./models/Credential.js";
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, } from "@simplewebauthn/server";
 const app = express();
 app.use(express.json());
-mongoose.connect("mongodb://localhost:27017/passkey", {
+dotenv.config();
+const uri = process.env.MONGODB_URI;
+mongoose.connect(uri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 });
@@ -24,7 +27,7 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
     store: MongoStore.create({
-        mongoUrl: "mongodb://localhost:27017/passkey",
+        mongoUrl: uri,
         collectionName: "sessions",
         ttl: 14 * 24 * 60 * 60,
     }),
