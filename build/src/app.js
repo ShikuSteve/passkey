@@ -111,7 +111,7 @@ app.post("/registerRequest", async (req, res) => {
                 });
             }
         }
-        const rpID = "localhost";
+        const rpID = "passkey-demos.onrender.com";
         const registrationOptions = await generateRegistrationOptions({
             rpName: "PassKey",
             rpID,
@@ -147,7 +147,7 @@ app.post("/registerResponse", async (req, res) => {
     const { response, userId } = req.body;
     const expectedChallenge = req.session.challenge;
     const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
-    const expectedRPID = "localhost";
+    const expectedRPID = "passkey-demos.onrender.com";
     console.log(response);
     console.log("Request headers:", req.headers);
     console.log("Session in /registerResponse:", req.session);
@@ -213,7 +213,7 @@ app.post("/registerResponse", async (req, res) => {
 app.post("/signinRequest", async (req, res, next) => {
     try {
         const authenticationOptions = await generateAuthenticationOptions({
-            rpID: "localhost",
+            rpID: "passkey-demos.onrender.com",
             allowCredentials: [],
         });
         console.log("Generated Challenge:", authenticationOptions.challenge);
@@ -233,12 +233,13 @@ app.post("/signinResponse", async (req, res, next) => {
         console.log("Session Data in signinResponse:", req.session);
         console.log("Session ID", req.sessionID);
         const { response, userId } = req.body;
+        console.log(response, userId);
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
         const expectedChallenge = req.session.challenge;
-        const expectedRPID = "localhost";
+        const expectedRPID = "passkey-demos.onrender.com";
         const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
         if (!expectedChallenge) {
             return res
@@ -250,6 +251,7 @@ app.post("/signinResponse", async (req, res, next) => {
         });
         if (!exitingCredential)
             return res.status(400).json({ error: "Invalid credential id" });
+        console.log(exitingCredential, "--------------------------------------------yah-------------------------------", exitingCredential.id);
         const publicKeyBuffer = exitingCredential.publicKey;
         const publicKeyUint8Array = new Uint8Array(publicKeyBuffer);
         const { verified } = await verifyAuthenticationResponse({

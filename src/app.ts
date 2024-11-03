@@ -170,7 +170,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       }
     }
 
-    const rpID = "localhost"; // Ensure this is defined
+    const rpID = "passkey-demos.onrender.com"; // Ensure this is defined
     // console.log("rpId before generating options:", rpID);
 
     // Generate registration options for WebAuthn create
@@ -190,9 +190,6 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       // Support for the two most common algorithms: ES256, and RS256
       supportedAlgorithmIDs: [-7, -257],
     });
-    // console.log("rpId:", registrationOptions.rp?.id);
-
-    // console.log("Registration options:", registrationOptions);
 
     req.session.challenge = registrationOptions.challenge;
     console.log(req.session);
@@ -227,7 +224,7 @@ app.post("/registerResponse", async (req, res) => {
   const expectedOrigin =
     req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
-  const expectedRPID = "localhost";
+  const expectedRPID = "passkey-demos.onrender.com";
   console.log(response);
   console.log("Request headers:", req.headers);
   console.log("Session in /registerResponse:", req.session);
@@ -312,7 +309,7 @@ app.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authenticationOptions = await generateAuthenticationOptions({
-        rpID: "localhost",
+        rpID: "passkey-demos.onrender.com",
         allowCredentials: [],
       });
       // Save the challenge in the user session
@@ -343,7 +340,7 @@ app.post(
 //     console.log(response, "yyyyyyyyyyyyyyyyyyyyyyyyyyyyy");
 //     const expectedChallenge = req.session.challenge;
 //     console.log("Expected Challenge:", expectedChallenge);
-//     const expectedRPID = "localhost";
+//     const expectedRPID = "passkey-demos.onrender.com";
 //     const expectedOrigin =
 //       req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
@@ -469,6 +466,7 @@ app.post(
       console.log("Session ID", req.sessionID);
 
       const { response, userId } = req.body;
+      console.log(response, userId);
       const user = await User.findById(userId);
 
       if (!user) {
@@ -476,7 +474,7 @@ app.post(
       }
 
       const expectedChallenge = req.session.challenge;
-      const expectedRPID = "localhost";
+      const expectedRPID = "passkey-demos.onrender.com";
       const expectedOrigin =
         req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
@@ -493,20 +491,12 @@ app.post(
       if (!exitingCredential)
         return res.status(400).json({ error: "Invalid credential id" });
 
-      // // Convert credentialId (Bytes) to Base64URLString for WebAuthn compatibility
-      // const credentialIdBase64 = isoBase64URL.fromBuffer(
-      //   isoBase64URL.toBuffer(credential.credentialId)
-      // );
+      console.log(
+        exitingCredential,
+        "--------------------------------------------yah-------------------------------",
+        exitingCredential.id
+      );
 
-      // // Convert publicKey from database format to Uint8Array if not already
-      // const publicKeyForVerification = credential.publicKey as Uint8Array;
-
-      // const verificationCredentials: WebAuthnCredential = {
-      //   id: credentialIdBase64,
-      //   publicKey: publicKeyForVerification,
-      //   counter: response.counter || 0,
-      //   transports: credential.transports as AuthenticatorTransportFuture[],
-      // };
       const publicKeyBuffer = exitingCredential.publicKey;
       const publicKeyUint8Array = new Uint8Array(publicKeyBuffer);
 
