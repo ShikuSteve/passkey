@@ -142,9 +142,9 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       excludeCredentials,
       attestationType: "none",
       authenticatorSelection: {
-        authenticatorAttachment: "cross-platform",
+        authenticatorAttachment: "platform",
         requireResidentKey: true,
-        userVerification: "preferred",
+        userVerification: "required",
       },
       // Support for the two most common algorithms: ES256, and RS256
       supportedAlgorithmIDs: [-7, -257],
