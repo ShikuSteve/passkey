@@ -24,7 +24,7 @@ mongoose.connect("mongodb://localhost:27017/passkey", {
   useUnifiedTopology: true,
 } as mongoose.ConnectOptions);
 
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader(
     "Access-Control-Allow-Origin",
     "https://passkey-demos.onrender.com/"
@@ -34,55 +34,6 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Credentials", "true");
   next();
 });
-
-interface COSEPublicKey {
-  kty: number; // Key Type
-  crv: number; // Curve Type
-  x: number[]; // X coordinate as an array of numbers
-  y: number[]; // Y coordinate as an array of numbers
-}
-
-function convertToCOSEPublicKey(uint8Array: Uint8Array): COSEPublicKey {
-  // Extract the x and y coordinates
-  const x = uint8Array.slice(15, 47); // 32 bytes for x
-  const y = uint8Array.slice(47, 79); // 32 bytes for y
-
-  // Create the COSE public key object
-  const cosePublicKey: COSEPublicKey = {
-    kty: 2, // Key Type for EC
-    crv: 1, // Curve Type for P-256
-    x: Array.from(x), // Convert Uint8Array to Array for COSE
-    y: Array.from(y), // Convert Uint8Array to Array for COSE
-  };
-
-  return cosePublicKey;
-}
-function cosePublicKeyToUint8Array(cosePublicKey: COSEPublicKey): Uint8Array {
-  const xArray = Uint8Array.from(cosePublicKey.x);
-  const yArray = Uint8Array.from(cosePublicKey.y);
-
-  // Create a new Uint8Array to hold the concatenated x and y
-  const publicKeyArray = new Uint8Array(1 + xArray.length + yArray.length); // 1 byte for the padding
-  publicKeyArray[0] = 0; // Padding byte
-  publicKeyArray.set(xArray, 1); // Set x
-  publicKeyArray.set(yArray, 1 + xArray.length); // Set y
-
-  return publicKeyArray;
-}
-
-function base64UrlToUint8Array(base64Url: string): Uint8Array {
-  // Replace URL-safe characters
-  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-  // Decode the Base64 string
-  const binaryString = atob(base64);
-  // Create a Uint8Array from the binary string
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
 
 // Session Middleware
 app.use(
@@ -210,18 +161,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
   }
 });
 
-function base64UrlToBuffer(base64Url: string): Buffer {
-  // Replace URL-safe characters
-  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-
-  // Decode the Base64 string
-  const binaryString = Buffer.from(base64, "base64").toString("binary");
-
-  // Create a Buffer from the binary string
-  return Buffer.from(binaryString, "binary");
-}
-
-app.post("/registerResponse", async (req, res) => {
+app.post("/registerResponse", async (req: Request, res: Response) => {
   const { response, userId } = req.body;
   const expectedChallenge = req.session.challenge;
   const expectedOrigin =

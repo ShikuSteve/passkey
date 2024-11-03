@@ -19,36 +19,6 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
-function convertToCOSEPublicKey(uint8Array) {
-    const x = uint8Array.slice(15, 47);
-    const y = uint8Array.slice(47, 79);
-    const cosePublicKey = {
-        kty: 2,
-        crv: 1,
-        x: Array.from(x),
-        y: Array.from(y),
-    };
-    return cosePublicKey;
-}
-function cosePublicKeyToUint8Array(cosePublicKey) {
-    const xArray = Uint8Array.from(cosePublicKey.x);
-    const yArray = Uint8Array.from(cosePublicKey.y);
-    const publicKeyArray = new Uint8Array(1 + xArray.length + yArray.length);
-    publicKeyArray[0] = 0;
-    publicKeyArray.set(xArray, 1);
-    publicKeyArray.set(yArray, 1 + xArray.length);
-    return publicKeyArray;
-}
-function base64UrlToUint8Array(base64Url) {
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const binaryString = atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-}
 app.use(session({
     secret: "keyboard cat",
     resave: false,
@@ -138,11 +108,6 @@ app.post("/registerRequest", async (req, res) => {
         return res.status(400).send({ error: error.message });
     }
 });
-function base64UrlToBuffer(base64Url) {
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const binaryString = Buffer.from(base64, "base64").toString("binary");
-    return Buffer.from(binaryString, "binary");
-}
 app.post("/registerResponse", async (req, res) => {
     const { response, userId } = req.body;
     const expectedChallenge = req.session.challenge;
