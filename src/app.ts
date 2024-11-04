@@ -79,26 +79,29 @@ app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
 
     // Basic validation
     if (!email || !userName) {
-      return res.status(400).json({ error: "All fields are required" });
+      return res
+        .status(400)
+        .json({ error: "Both email and userName are required" });
     }
 
+    // Check if user already exists
     let user = await User.findOne({ email });
 
     if (user) {
-      return {
+      return res.status(200).json({
         message: "Login successful",
         user,
-      };
+      });
     }
 
     // If user does not exist, create a new user
     user = new User({ email, userName });
     await user.save();
 
-    return {
+    res.status(201).json({
       message: "User created successfully",
       user,
-    };
+    });
   } catch (error) {
     next(error); // Pass any errors to the next middleware
   }
@@ -144,7 +147,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       }
     }
 
-    const rpID = "passkey-demos.onrender.com"; // Ensure this is defined
+    const rpID = "localhost"; // Ensure this is defined
     // console.log("rpId before generating options:", rpID);
 
     // Generate registration options for WebAuthn create
@@ -483,9 +486,7 @@ app.post(
       req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
     if (!expectedChallenge) {
-      return res
-        .status(400)
-        .json({ error: "Missing challenge from session." });
+      return res.status(400).json({ error: "Missing challenge from session." });
     }
 
     const exitingCredential = await Credentials.findOne({

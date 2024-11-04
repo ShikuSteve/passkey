@@ -34,21 +34,23 @@ app.post("/signup", async (req, res, next) => {
     try {
         const { email, userName } = req.body;
         if (!email || !userName) {
-            return res.status(400).json({ error: "All fields are required" });
+            return res
+                .status(400)
+                .json({ error: "Both email and userName are required" });
         }
         let user = await User.findOne({ email });
         if (user) {
-            return {
+            return res.status(200).json({
                 message: "Login successful",
                 user,
-            };
+            });
         }
         user = new User({ email, userName });
         await user.save();
-        return {
+        res.status(201).json({
             message: "User created successfully",
             user,
-        };
+        });
     }
     catch (error) {
         next(error);
@@ -79,7 +81,7 @@ app.post("/registerRequest", async (req, res) => {
                 });
             }
         }
-        const rpID = "passkey-demos.onrender.com";
+        const rpID = "localhost";
         const registrationOptions = await generateRegistrationOptions({
             rpName: "PassKey",
             rpID,
@@ -221,9 +223,7 @@ app.post("/signinResponse", async (req, res, next) => {
     const expectedRPID = "localhost";
     const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
     if (!expectedChallenge) {
-        return res
-            .status(400)
-            .json({ error: "Missing challenge from session." });
+        return res.status(400).json({ error: "Missing challenge from session." });
     }
     const exitingCredential = await Credentials.findOne({
         credentialId: response.id,
