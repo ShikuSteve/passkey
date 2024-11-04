@@ -16,6 +16,7 @@ import {
   AuthenticatorTransportFuture,
   WebAuthnCredential,
 } from "@simplewebauthn/types";
+import { AuthOptions } from "./models/AuthOptions.js";
 
 const app = express();
 
@@ -30,10 +31,11 @@ mongoose.connect(uri, {
 } as mongoose.ConnectOptions);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.setHeader(
-    "Access-Control-Allow-Origin",
-    "https://passkey-demos.onrender.com"
-  );
+  // res.setHeader(
+  //   "Access-Control-Allow-Origin",
+  //   "https://passkey-demos.onrender.com"
+  // );
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3001");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -41,23 +43,23 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Session Middleware
-app.use(
-  session({
-    secret: "keyboard cat", // Change this to a more secure secret in production
-    resave: false,
-    saveUninitialized: true, // This should be true for session creation
-    store: MongoStore.create({
-      mongoUrl: uri,
-      collectionName: "sessions",
-      ttl: 14 * 24 * 60 * 60, // 14 days
-    }),
-    cookie: {
-      secure: true, // Set to true if using HTTPS
-      maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
-      sameSite: "none", // 'lax' is a good default
-    },
-  })
-);
+// app.use(
+//   session({
+//     secret: "keyboard cat", // Change this to a more secure secret in production
+//     resave: false,
+//     saveUninitialized: true, // This should be true for session creation
+//     store: MongoStore.create({
+//       mongoUrl: uri,
+//       collectionName: "sessions",
+//       ttl: 14 * 24 * 60 * 60, // 14 days
+//     }),
+//     cookie: {
+//       secure: true, // Set to true if using HTTPS
+//       maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
+//       sameSite: "none", // 'lax' is a good default
+//     },
+//   })
+// );
 
 app.get("/users", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -80,19 +82,23 @@ app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: "User  already exists" });
+    let user = await User.findOne({ email });
+
+    if (user) {
+      return {
+        message: "Login successful",
+        user,
+      };
     }
 
-    // Create new user
-    const newUser = new User({ email, userName });
-    await newUser.save();
+    // If user does not exist, create a new user
+    user = new User({ email, userName });
+    await user.save();
 
-    res
-      .status(201)
-      .json({ message: "User  created successfully", userId: newUser._id });
+    return {
+      message: "User created successfully",
+      user,
+    };
   } catch (error) {
     next(error); // Pass any errors to the next middleware
   }
@@ -105,6 +111,15 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
 
   if (!user) {
     return res.status(404).json({ error: "User not found" });
+  }
+
+  const exitingAuthOptions = await AuthOptions.findOne({
+    userClientId: userId,
+  });
+
+  if (exitingAuthOptions) {
+    await AuthOptions.deleteOne({ userClientId: userId });
+    console.log(`Deleted existing AuthOptions for userId: ${userId}`);
   }
 
   try {
@@ -149,11 +164,18 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       // Support for the two most common algorithms: ES256, and RS256
       supportedAlgorithmIDs: [-7, -257],
     });
+    console.log(registrationOptions, "yoh😀😀😀😀😀😀");
 
-    req.session.challenge = registrationOptions.challenge;
-    console.log(req.session);
-    console.log(req.session.challenge);
-    console.log(registrationOptions);
+    // req.session.challenge = registrationOptions.challenge;
+    // console.log(req.session);
+    // console.log(req.session.challenge);
+    // console.log(registrationOptions);
+    await AuthOptions.create({
+      challenge: registrationOptions.challenge,
+      userId: registrationOptions.user.id,
+      timeout: registrationOptions.timeout,
+      userClientId: user._id,
+    });
 
     // console.log("User  ID:", userId);
     // console.log("User  found:", user);
@@ -168,15 +190,27 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
 
 app.post("/registerResponse", async (req: Request, res: Response) => {
   const { response, userId } = req.body;
-  const expectedChallenge = req.session.challenge;
+  const exitingAuthOptions = await AuthOptions.findOne({
+    userClientId: userId,
+  });
+
+  if (!exitingAuthOptions) {
+    return res.status(400).json({ error: "No Auth Options for the user" });
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const expectedChallenge = exitingAuthOptions.challenge;
   const expectedOrigin =
     req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
-  const expectedRPID = "passkey-demos.onrender.com";
+  const expectedRPID = "localhost";
   console.log(response);
   console.log("Request headers:", req.headers);
-  console.log("Session in /registerResponse:", req.session);
-  console.log("Session challenge:", req.session.challenge);
+  console.log("Session challenge:", exitingAuthOptions.challenge);
 
   if (!expectedChallenge) {
     return res
@@ -184,25 +218,16 @@ app.post("/registerResponse", async (req: Request, res: Response) => {
       .json({ error: "Challenge is missing from session." });
   }
 
-  if (!req.session.challenge) {
-    console.log("Challenge is missing from session.");
-    return res.status(400).json({ error: "Challenge not found in session." });
-  }
+  // if (!req.session.challenge) {
+  //   console.log("Challenge is missing from session.");
+  //   return res.status(400).json({ error: "Challenge not found in session." });
+  // }
 
   if (!response) {
     return res.status(400).json({ error: "No response found" });
   }
 
   try {
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    if (typeof expectedChallenge !== "string") {
-      return res.status(400).json({ error: "Challenge not found in session." });
-    }
-
     const { verified, registrationInfo } = await verifyRegistrationResponse({
       response,
       expectedChallenge,
@@ -238,13 +263,16 @@ app.post("/registerResponse", async (req: Request, res: Response) => {
     });
 
     // Kill the challenge for this session.
-    delete req.session.challenge;
-    req.session.username = user.userName;
-    req.session.signedIn = true;
+    // delete req.session.challenge;
+    // req.session.username = user.userName;
+    // req.session.signedIn = true;
+
+    await AuthOptions.deleteOne({ userClientId: userId });
 
     return res.json(user);
   } catch (error: any) {
-    delete req.session.challenge;
+    // delete req.session.challenge;
+    await AuthOptions.deleteOne({ userClientId: userId });
     console.log(error);
     return res.status(400).json({ error: error.message });
   }
@@ -255,21 +283,44 @@ app.post("/registerResponse", async (req: Request, res: Response) => {
 app.post(
   "/signinRequest",
   async (req: Request, res: Response, next: NextFunction) => {
+    const { userId } = req.body;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const exitingAuthOptions = await AuthOptions.findOne({
+      userClientId: userId,
+    });
+
+    if (exitingAuthOptions) {
+      await AuthOptions.deleteOne({ userClientId: userId });
+      console.log(`Deleted existing AuthOptions for userId: ${userId}`);
+    }
+
     try {
       const authenticationOptions = await generateAuthenticationOptions({
-        rpID: "passkey-demos.onrender.com",
+        rpID: "localhost",
         allowCredentials: [],
       });
       // Save the challenge in the user session
 
-      console.log("Generated Challenge:", authenticationOptions.challenge);
+      // console.log("Generated Challenge:", authenticationOptions.challenge);
 
-      req.session.challenge = authenticationOptions.challenge;
+      // req.session.challenge = authenticationOptions.challenge;
 
-      console.log("Session in signinRequest:", req.session);
-      console.log("Session ID", req.sessionID);
+      // console.log("Session in signinRequest:", req.session);
+      // console.log("Session ID", req.sessionID);
 
       console.log("Session Challenge after setting:", req.session.challenge);
+      await AuthOptions.create({
+        challenge: authenticationOptions.challenge,
+        userId: user._id,
+        timeout: authenticationOptions.timeout,
+        userClientId: user._id,
+      });
 
       return res.json(authenticationOptions);
     } catch (error: any) {
@@ -409,42 +460,48 @@ app.post(
 app.post(
   "/signinResponse",
   async (req: Request, res: Response, next: NextFunction) => {
+    const { response, userId } = req.body;
+    console.log(response, userId);
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const exitingAuthOptions = await AuthOptions.findOne({
+      userClientId: userId,
+    });
+
+    if (!exitingAuthOptions) {
+      return res.status(400).json({ error: "No Auth Options for the user" });
+    }
+
+    const expectedChallenge = exitingAuthOptions.challenge;
+    const expectedRPID = "localhost";
+    const expectedOrigin =
+      req.get("origin") || `${req.protocol}://${req.get("host")}`;
+
+    if (!expectedChallenge) {
+      return res
+        .status(400)
+        .json({ error: "Missing challenge from session." });
+    }
+
+    const exitingCredential = await Credentials.findOne({
+      credentialId: response.id,
+    });
+
+    if (!exitingCredential)
+      return res.status(400).json({ error: "Invalid credential id" });
+
+    console.log(
+      exitingCredential,
+      "--------------------------------------------yah-------------------------------",
+      exitingCredential.id
+    );
+
     try {
-      console.log("Session Data in signinResponse:", req.session);
-      console.log("Session ID", req.sessionID);
-
-      const { response, userId } = req.body;
-      console.log(response, userId);
-      const user = await User.findById(userId);
-
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const expectedChallenge = req.session.challenge;
-      const expectedRPID = "passkey-demos.onrender.com";
-      const expectedOrigin =
-        req.get("origin") || `${req.protocol}://${req.get("host")}`;
-
-      if (!expectedChallenge) {
-        return res
-          .status(400)
-          .json({ error: "Missing challenge from session." });
-      }
-
-      const exitingCredential = await Credentials.findOne({
-        credentialId: response.id,
-      });
-
-      if (!exitingCredential)
-        return res.status(400).json({ error: "Invalid credential id" });
-
-      console.log(
-        exitingCredential,
-        "--------------------------------------------yah-------------------------------",
-        exitingCredential.id
-      );
-
       const publicKeyBuffer = exitingCredential.publicKey;
       const publicKeyUint8Array = new Uint8Array(publicKeyBuffer);
 
@@ -467,13 +524,13 @@ app.post(
       }
 
       // Clear the challenge and set user data in the session
-      delete req.session.challenge;
-      req.session.signedIn = true;
-
+      await AuthOptions.deleteOne({ userClientId: userId });
       console.log("Updated Session Data:", req.session);
 
       return res.json(user);
     } catch (error: any) {
+      await AuthOptions.deleteOne({ userClientId: userId });
+
       console.error("Error during signinResponse:", error);
       return res.status(500).json({ error: error.message });
     }
