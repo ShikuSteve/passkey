@@ -31,11 +31,11 @@ mongoose.connect(uri, {
 } as mongoose.ConnectOptions);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  // res.setHeader(
-  //   "Access-Control-Allow-Origin",
-  //   "https://passkey-demos.onrender.com"
-  // );
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3001");
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "https://passkey-demos.onrender.com"
+  );
+  // res.setHeader("Access-Control-Allow-Origin", "http://localhost:3001");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -147,7 +147,7 @@ app.post("/registerRequest", async (req: Request, res: Response) => {
       }
     }
 
-    const rpID = "localhost"; // Ensure this is defined
+    const rpID = "passkey-demos.onrender.com"; // Ensure this is defined
     // console.log("rpId before generating options:", rpID);
 
     // Generate registration options for WebAuthn create
@@ -210,7 +210,7 @@ app.post("/registerResponse", async (req: Request, res: Response) => {
   const expectedOrigin =
     req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
-  const expectedRPID = "localhost";
+  const expectedRPID = "passkey-demos.onrender.com";
   console.log(response);
   console.log("Request headers:", req.headers);
   console.log("Session challenge:", exitingAuthOptions.challenge);
@@ -305,7 +305,7 @@ app.post(
 
     try {
       const authenticationOptions = await generateAuthenticationOptions({
-        rpID: "localhost",
+        rpID: "passkey-demos.onrender.com",
         allowCredentials: [],
       });
       // Save the challenge in the user session
@@ -356,7 +356,7 @@ app.post(
 
     const expectedChallenge = exitingAuthOptions.challenge;
     console.log(exitingAuthOptions.challenge);
-    const expectedRPID = "localhost";
+    const expectedRPID = "passkey-demos.onrender.com";
     const expectedOrigin =
       req.get("origin") || `${req.protocol}://${req.get("host")}`;
 
