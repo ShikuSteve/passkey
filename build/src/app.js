@@ -42,14 +42,14 @@ app.post("/signup", async (req, res, next) => {
         if (user) {
             return res.status(200).json({
                 message: "Login successful",
-                user,
+                userId: user._id,
             });
         }
         user = new User({ email, userName });
         await user.save();
         res.status(201).json({
             message: "User created successfully",
-            user,
+            userId: user._id,
         });
     }
     catch (error) {
@@ -192,13 +192,13 @@ app.post("/signinRequest", async (req, res, next) => {
             rpID: "localhost",
             allowCredentials: [],
         });
-        console.log("Session Challenge after setting:", req.session.challenge);
-        await AuthOptions.create({
+        const challenge = await AuthOptions.create({
             challenge: authenticationOptions.challenge,
-            userId: user._id,
+            userId: userId,
             timeout: authenticationOptions.timeout,
-            userClientId: user._id,
+            userClientId: user.id,
         });
+        console.log(challenge);
         return res.json(authenticationOptions);
     }
     catch (error) {
@@ -220,6 +220,7 @@ app.post("/signinResponse", async (req, res, next) => {
         return res.status(400).json({ error: "No Auth Options for the user" });
     }
     const expectedChallenge = exitingAuthOptions.challenge;
+    console.log(exitingAuthOptions.challenge);
     const expectedRPID = "localhost";
     const expectedOrigin = req.get("origin") || `${req.protocol}://${req.get("host")}`;
     if (!expectedChallenge) {

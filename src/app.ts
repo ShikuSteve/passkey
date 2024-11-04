@@ -90,7 +90,7 @@ app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
     if (user) {
       return res.status(200).json({
         message: "Login successful",
-        user,
+        userId: user._id,
       });
     }
 
@@ -100,7 +100,7 @@ app.post("/signup", async (req: Request, res: Response, next: NextFunction) => {
 
     res.status(201).json({
       message: "User created successfully",
-      user,
+      userId: user._id,
     });
   } catch (error) {
     next(error); // Pass any errors to the next middleware
@@ -317,13 +317,14 @@ app.post(
       // console.log("Session in signinRequest:", req.session);
       // console.log("Session ID", req.sessionID);
 
-      console.log("Session Challenge after setting:", req.session.challenge);
-      await AuthOptions.create({
+      const challenge = await AuthOptions.create({
         challenge: authenticationOptions.challenge,
-        userId: user._id,
+        userId: userId,
         timeout: authenticationOptions.timeout,
-        userClientId: user._id,
+        userClientId: user.id,
       });
+
+      console.log(challenge);
 
       return res.json(authenticationOptions);
     } catch (error: any) {
@@ -332,133 +333,6 @@ app.post(
     }
   }
 );
-
-// app.post(
-//   "/signinResponse",
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     console.log("Session Data in signinResponse:", req.session);
-
-//     const { response, userId } = req.body;
-//     console.log(response, "yyyyyyyyyyyyyyyyyyyyyyyyyyyyy");
-//     const expectedChallenge = req.session.challenge;
-//     console.log("Expected Challenge:", expectedChallenge);
-//     const expectedRPID = "passkey-demos.onrender.com";
-//     const expectedOrigin =
-//       req.get("origin") || `${req.protocol}://${req.get("host")}`;
-
-//     try {
-//       const credential = await Credentials.findOne({
-//         credentialId: response.id,
-//       });
-//       if (!credential) {
-//         return res.status(400).json({ error: "Invalid credential id" });
-//       }
-
-//       const user = await User.findById(userId);
-//       if (!user) {
-//         return res.status(400).json({ error: "User not found" });
-//       }
-//       if (expectedChallenge === undefined) {
-//         return res
-//           .status(400)
-//           .json({ error: "Expected challenge is missing from session." });
-//       }
-
-//       const webAuthnCredential = {
-//         credentialPublicKey: isoBase64URL.toBuffer(
-//           response.credential.publicKey
-//         ),
-//         credentialID: isoBase64URL.toBuffer(response.credential.id),
-//         transports: response.credential.transports,
-//       };
-
-//       const verificationCredentials: WebAuthnCredential = {
-//         id: isoBase64URL.fromBuffer(webAuthnCredential.credentialID),
-//         publicKey: webAuthnCredential.credentialPublicKey,
-//         counter: response.credential.counter,
-//       };
-
-//       const { verified } = await verifyAuthenticationResponse({
-//         response,
-//         credential: verificationCredentials,
-//         expectedChallenge,
-//         expectedOrigin,
-//         expectedRPID,
-//         requireUserVerification: false,
-//       });
-//       if (!verified) {
-//         return res.status(400).json({ error: "Authentication failed" });
-//       }
-//       delete req.session.challenge;
-//       req.session.username = user.userName;
-//       req.session.signedIn = true;
-
-//       return res.json(user);
-//     } catch (error: any) {
-//       delete req.session.challenge;
-//       console.log(error);
-//       return res.status(400).json({ error: error.message });
-//     }
-//   }
-// );
-// app.post(
-//   "/signinResponse",
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     try {
-//       const { response, userId } = req.body;
-
-//       console.log(req.session);
-
-//       const expectedChallenge = req.session.challenge;
-//       console.log(expectedChallenge);
-//       const expectedRPID = "localhost";
-//       const expectedOrigin =
-//         req.get("origin") || `${req.protocol}://${req.get("host")}`;
-
-//       if (!expectedChallenge) {
-//         return res
-//           .status(400)
-//           .json({ error: "Missing challenge from session." });
-//       }
-
-//       const credential = await Credentials.findOne({
-//         credentialId: response.id,
-//       });
-//       if (!credential)
-//         return res.status(400).json({ error: "Invalid credential id" });
-
-//       const user = await User.findById(userId);
-//       if (!user) return res.status(400).json({ error: "User not found" });
-
-//       const verificationCredentials: WebAuthnCredential = {
-//         id: isoBase64URL.fromBuffer(response.credential.id),
-//         publicKey: response.credential.publicKey,
-//         counter: response.credential.counter,
-//       };
-
-//       const { verified } = await verifyAuthenticationResponse({
-//         response,
-//         credential: verificationCredentials,
-//         expectedChallenge,
-//         expectedOrigin,
-//         expectedRPID,
-//         requireUserVerification: false,
-//       });
-
-//       if (!verified)
-//         return res.status(400).json({ error: "Authentication failed" });
-
-//       delete req.session.challenge;
-//       req.session.username = user.userName;
-//       req.session.signedIn = true;
-
-//       return res.json(user);
-//     } catch (error: any) {
-//       console.error("Error during signinResponse:", error);
-//       return res.status(500).json({ error: error.message });
-//     }
-//   }
-// );
 
 app.post(
   "/signinResponse",
@@ -481,6 +355,7 @@ app.post(
     }
 
     const expectedChallenge = exitingAuthOptions.challenge;
+    console.log(exitingAuthOptions.challenge);
     const expectedRPID = "localhost";
     const expectedOrigin =
       req.get("origin") || `${req.protocol}://${req.get("host")}`;
